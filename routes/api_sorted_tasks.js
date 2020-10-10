@@ -1,20 +1,13 @@
 var express = require('express');
 var router = express.Router();
 const redis = require("redis");
-// const {promisify} = require('util');
+const {promisify} = require('util');
 const client = redis.createClient();
 import LibSortedTasks from "../libs/LibSortedTasks"
+import LibCommon from "../libs/LibCommon"
 
-//
-function convert_array(get_items ){
-    var ret = [];
-    get_items.forEach(async function (get_item) {
-        var row = JSON.parse(get_item || '[]')
-//        console.log( row )
-        ret.push(row)
-    });
-    return ret;
-}
+const mgetAsync = promisify(client.mget).bind(client);
+const zrevrangeAsync = promisify(client.zrevrange).bind(client);
 
 //
 router.get('/', function(req, res, next) {
@@ -23,25 +16,24 @@ router.get('/', function(req, res, next) {
 /******************************** 
 * 
 *********************************/
-router.get('/tasks_index', function(req, res) {
+router.get('/tasks_index',async function(req, res) {
+    var ret_arr = {ret:0, msg:""}
     client.on("error", function(error) {
         console.error(error);
+        ret_arr.msg = error
+        res.json(ret_arr);
     });
-    var key_sorted  = "sorted_tasks";
-    client.zrevrange(key_sorted, 0, -1, function(err, reply){
-        if(err){
-            console.log("error-zrevrange:"+ err );
-            return;
-        }else{
-            client.mget(reply, function(err, reply_get) {
-// console.log( reply_get );
-                var d= convert_array(reply_get)
-                var param = {"docs": d };
-                res.json(param); 
-//    console.log( "soated-items : ", d );
-            });
-        }
-    });
+    try{
+        var data = await zrevrangeAsync("sorted_tasks", 0, -1 );
+        var reply_books = await mgetAsync(data);
+        const task_items = LibCommon.string_to_obj(reply_books)
+        var param = {"docs": task_items };
+        res.json(param); 
+    } catch (e) {
+        console.log(e);
+        ret_arr.msg = e
+        res.json(ret_arr);
+    }
 });
 /******************************** 
 * 
